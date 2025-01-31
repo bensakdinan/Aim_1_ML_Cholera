@@ -1,9 +1,9 @@
 import pandas as pd
-# import scikitplot
+import numpy as np
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+import DataOrganization
 
 if __name__ == "__main__":
 
@@ -31,23 +31,34 @@ if __name__ == "__main__":
     # print(merged_cholera_data)
     merged_cholera_data = merged_cholera_data.fillna(0)
 
-    # Calculating ICP1/2/3:Vc ratios
-    merged_cholera_data["ICP1_Vc_ratio"] = (merged_cholera_data["ICP1"]/
-                                            merged_cholera_data["Vibrio.cholerae"])
-    merged_cholera_data["ICP2_Vc_ratio"] = (merged_cholera_data["ICP2"] /
-                                            merged_cholera_data["Vibrio.cholerae"])
-    merged_cholera_data["ICP3_Vc_ratio"] = (merged_cholera_data["ICP3"] /
-                                            merged_cholera_data["Vibrio.cholerae"])
+    # Calculating ICP1/2/3:Vc ratios (and handling potential divide by 0)
+    merged_cholera_data["ICP1_Vc_ratio"] = np.where(
+        merged_cholera_data["Vibrio.cholerae"] == (0 or 0.0), 0,
+        merged_cholera_data["ICP1"] / merged_cholera_data["Vibrio.cholerae"]
+    )
+    merged_cholera_data["ICP2_Vc_ratio"] = np.where(
+        merged_cholera_data["Vibrio.cholerae"] == (0 or 0.0), 0,
+        merged_cholera_data["ICP2"] / merged_cholera_data["Vibrio.cholerae"]
+    )
+    merged_cholera_data["ICP3_Vc_ratio"] = np.where(
+        merged_cholera_data["Vibrio.cholerae"] == (0 or 0.0), 0,
+        merged_cholera_data["ICP3"] / merged_cholera_data["Vibrio.cholerae"]
+    )
 
-    # Binning Dehydration_Status into Mild or Non-Mild
-    merged_cholera_data['Dehydration_Status_Mild_NonMild'] = 'Mild'
+    # In the original datatable, Mild = 1, Moderate = 2, Moderate = 3
+    # Binning Dehydration_Status into Mild (= 1.0) or Non-Mild (= 2.0)
+    merged_cholera_data['Dehydration_Status_Mild_NonMild'] = 1.0
     merged_cholera_data.loc[merged_cholera_data['Dehydration_Status'].isin(
-        [2, 3]), 'Dehydration_Status_Mild_NonMild'] = 'Non_Mild'
+        [2, 3]), 'Dehydration_Status_Mild_NonMild'] = 2.0
 
     # Binning Dehydration_Status into Severe or Non-Severe
-    merged_cholera_data['Dehydration_Status_Severe_NonSevere'] = 'Severe'
+    # Binning Dehydration_Status into Severe (= 2.0) or Non-Severe (= 1.0)
+    merged_cholera_data['Dehydration_Status_Severe_NonSevere'] = 2.0
     merged_cholera_data.loc[merged_cholera_data['Dehydration_Status'].isin(
-        [2, 1]), 'Dehydration_Status_Severe_NonSevere'] = 'Non_Severe'
+        [2, 1]), 'Dehydration_Status_Severe_NonSevere'] = 1.0
+
+    # Replacing 'Nature_of_Stool' string values with float values
+    DataOrganization.convert_str_to_numeric(merged_cholera_data)
 
     merged_cholera_data.to_csv("merged_cholera_data.csv", index=False)
 
@@ -64,3 +75,15 @@ if __name__ == "__main__":
                         'Nature_of_Stool', 'AZI', 'CIP', 'DOX', 'Active_Prophages']
                         # Try without Active_Prophages to see if it improves prediction
     X = merged_cholera_data[patient_features]
+
+    # Splitting data in training and testing subsets
+    train_X, val_X, train_y, val_y = train_test_split(X, y, random_state=0)
+
+    # Training/fitting the model
+    cholera_rf_model = RandomForestClassifier(random_state=0)
+    cholera_rf_model.fit(train_X, train_y)
+
+    # Predictions
+    cholera_rf_predictions = cholera_rf_model.predict(val_X)
+    cholera_rf_mae = mean_absolute_error(val_y, cholera_rf_predictions)
+    print(f"Mean absolute error for predictions in cholera_rf_model: {cholera_rf_mae}")
