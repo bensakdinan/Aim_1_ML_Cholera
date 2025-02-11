@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-import DataOrganization
+import data_organization
 
 if __name__ == "__main__":
 
