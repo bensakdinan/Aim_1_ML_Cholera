@@ -1,14 +1,14 @@
 import pandas as pd
 import numpy as np
+import data_organization
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import balanced_accuracy_score, roc_auc_score, make_scorer, accuracy_score
+from sklearn.metrics import balanced_accuracy_score, roc_auc_score, make_scorer, accuracy_score, roc_curve
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report, precision_recall_curve, auc
 from sklearn.metrics import ConfusionMatrixDisplay
 import seaborn as sns
 import matplotlib.pyplot as plt
-
 
 if __name__ == "__main__":
     # File paths
@@ -59,15 +59,10 @@ if __name__ == "__main__":
     # patient_features = ['ICP1_Vc_ratio', 'Area_Code', 'Age_in_Years', 'Nature_of_Stool', 'ICP1', 'Vibrio.cholerae']
     relevant_columns = [
         'Dehydration_Status', 'Dehydration_Status_Mild_NonMild', 'Dehydration_Status_Severe_NonSevere',
-        'Age_in_Years', 'Area_Code', 'Vibrio.cholerae',
-        'Duration_of_Dirrhoea_in_Hrs', 'ICP1', 'ICP1_Vc_ratio',
-        'Nature_of_Stool', 'AZI', 'CIP', 'DOX', 'Active_Prophages'
+        'Vibrio.cholerae','ICP1', 'ICP1_Vc_ratio','AZI', 'CIP', 'DOX', 'Active_Prophages'
     ]
 
     merged_cholera_data = merged_cholera_data[relevant_columns]  # Keep only relevant columns
-
-    # Replace whitespaces in 'Nature_of_Stool' with '_'
-    merged_cholera_data['Nature_of_Stool'] = merged_cholera_data['Nature_of_Stool'].replace(' ', '_', regex=True)
 
     # Filling in missing data points with 0.0
     merged_cholera_data["AZI"] = merged_cholera_data["AZI"].fillna(0.0)
@@ -83,24 +78,19 @@ if __name__ == "__main__":
                                           'Dehydration_Status_Severe_NonSevere'])
 
     # y = merged_cholera_data['Dehydration_Status'].copy()
-    y = merged_cholera_data['Dehydration_Status_Mild_NonMild'].copy()  # Uncomment the desired prediction target
-    # y = merged_cholera_data['Dehydration_Status_Severe_NonSevere'].copy()
+    # y = merged_cholera_data['Dehydration_Status_Mild_NonMild'].copy()  # Uncomment the desired prediction target
+    y = merged_cholera_data['Dehydration_Status_Severe_NonSevere'].copy()
     # print(X.head())
     # print(y.head())
 
     print(X.dtypes)
-
-    # One-hot encoding my categorical data columns, 'Area_Code' and 'Nature_of_Stool'. Numerical values of
-    # 'Area_Code' and 'Nature_of_Stool' have no continuous value, so values must be categorized
-    X_encoded = pd.get_dummies(X, columns=['Area_Code', 'Nature_of_Stool'])
-    X_encoded.to_csv("X_encoded.csv", index=False)
 
     # Check that there are only 2 possible classifications, the below array should be [1 0]
     print(y.unique())
 
     # Splitting data into test/training subsets
     print(sum(y) / len(y))  # 0.110 of y is mild, the training and test subsets should be stratified to this proportion
-    X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, random_state=37, stratify=y)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=37, stratify=y)
     print(sum(y_train) / len(y_train))  # 0.112 -> Stratification is good
     print(sum(y_test) / len(y_test))  # 0.105 -> Stratification is good
 
@@ -119,7 +109,7 @@ if __name__ == "__main__":
 
     # Plot confusion matrix
     cmatrix = confusion_matrix(y_test, y_predictions)
-    plt.figure(figsize=(9,7))
+    plt.figure(figsize=(9, 7))
     sns.heatmap(cmatrix, annot=True, fmt='d', cmap="Blues", xticklabels=["Non-Mild", "Mild"],
                 yticklabels=["Non-Mild", "Mild"])
     # sns.heatmap(cmatrix, annot=True, fmt='d', cmap="Blues", xticklabels=["Severe", "Non_Severe"],
@@ -128,5 +118,37 @@ if __name__ == "__main__":
     plt.ylabel("Actual")
     plt.title("Confusion Matrix")
     plt.show()
+    # [2] validation_0 - aucpr: 0.31576
 
+    # My dataset is very imbalanced, so precision-recall is a very important metric to evaluate
+    # Precision = Tp / (Tp + Fp)
+    # Recall    = Tp / (Tp + Fn )
+    y_pred_proba = clf_xgb.predict_proba(X_test)[:, 1]
+    precision, recall, thresholds = precision_recall_curve(y_test, y_pred_proba)
+    auc_score = auc(recall, precision)
+    plt.figure(figsize=(8, 6))
+    plt.plot(recall, precision, marker='.', label='PR Curve')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title(f'Precision-Recall Curve (AUC = {auc_score:.2f})')
+    plt.legend()
+    plt.show()
+
+    # ROC AUC curve
+    fpr, tpr, ths = roc_curve(y_test, y_pred_proba)
+    roc_auc = auc(fpr, tpr)
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='blue', label=f'ROC curve (AUC = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='red', linestyle='--', label='Random guess')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+    plt.show()
+
+    # To-Dos
+    # Measure precision and recall for my model and also learn what that really means
+    # Cross-validation for overfitting
     # Calculate the weights of each feature to prediction -> Especially ICP1:Vc ratio
